@@ -22,6 +22,7 @@ void loop() {
   Motor motors;
   SmallLaser front;
 
+  //get average of ToF reading
   float average = 0;
   for(int x=0; x < 10; x++) {
     average += front.read(1);
@@ -32,66 +33,23 @@ void loop() {
 //  Serial.print("\n");
 //  delay(1000);
 
+  //if too close, do a 3-point turn
   if(average <= 20) {
       motors.move_backwards(200);
       delay(700);
       motors.turn_right();
       delay(500);
    }
-  
+
+  //turn normally
   else if(average <= 40) {
     motors.turn_right();
     delay(700);
   }
 
+  //otherwise just go
   else {
     motors.move_forwards(230);
   }
-  
-//  motors.move_forwards(255);
-////  motors.turn_right();
-//
-//  delay(2000);
-//
-//  int average = 0;
-//  for(int x=0; x < 10; x++) {
-//    average += front.read(1);
-//  }
-//  average /= 10;
-//
-//  if(average <= 20) {
-//    motors.turn_right();
-//    delay(2000);
-//  }
-//  else if(average <= 10) {
-//    motors.move_backwards(255);
-//    delay(1000);
-//    motors.turn_right();
-//    delay(2000);
-//  }
-
-//  int reading = front.read(1);
-//
-//  Serial.println(reading);
-//  delay(1000);
-//
-//  if(reading < 20 || reading > 10) {
-//    do{
-//      motors.turn_right();
-//    } while(front.read(1) < 20);
-//  }
-  
-//
-//  delay(3000);
-//
-//  motors.move_backwards(255);
-//
-//  delay(3000);
-//
-//  motors.brake();
-//
-//  delay(1000);
-
-  
 
 }
