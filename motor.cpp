@@ -59,7 +59,7 @@
         digitalWrite(directionB, HIGH);
         digitalWrite(brakeB, LOW);   
         analogWrite(pwmA, 255);
-        analogWrite(pwmB, 128);
+        analogWrite(pwmB, 70);
       }
       void turn_left(){
         digitalWrite(directionA, HIGH);
