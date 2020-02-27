@@ -7,6 +7,6 @@ class SmallLaser {
     
     public:
         int read(int sensor) {
-            return log(analogRead(sensor)/665.9)/-0.018;
+            return log(analogRead(front)/665.9)/-0.018;
         }
 };
