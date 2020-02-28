@@ -5,9 +5,9 @@ class IR_Sensor {
         const int left1 = A4; //2
         const int left2 = A5; //3
         const int long_front = A6; //4
-    
+        float data[4];
     public:
-        int read(int sensor) {
+        float read(int sensor) {
         	switch (sensor){
         		case 1:
         			return -55.89*log(analogRead(front)) + 363.54;
@@ -15,10 +15,10 @@ class IR_Sensor {
         		case 2:
         			return -55.89*log(analogRead(left1)) + 363.54;
         			break;
-        	    case 3:
+        	  case 3:
         			return -55.89*log(analogRead(left2)) + 363.54;
         			break;
-				case 4:
+				    case 4:
         			return -279.2*log(analogRead(long_front)) + 1836.7;
         			break;	
         		default:
