@@ -36,7 +36,16 @@
         pinMode(brakeA, OUTPUT); 
         pinMode(brakeB, OUTPUT); 
       }
-      
+      void move_left_forwards(int speed){
+        digitalWrite(directionA, HIGH);
+        digitalWrite(brakeA, LOW);     
+        analogWrite(pwmA, speed);
+      }
+      void move_right_forwards(int speed){ 
+        digitalWrite(directionB, HIGH);
+        digitalWrite(brakeB, LOW);   
+        analogWrite(pwmB, speed);
+      }
       void move_forwards(int speed){
         digitalWrite(directionA, HIGH);
         digitalWrite(brakeA, LOW);   

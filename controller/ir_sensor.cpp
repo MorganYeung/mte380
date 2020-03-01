@@ -15,10 +15,10 @@ class IR_Sensor {
         		case 2:
         			return -55.89*log(analogRead(left1)) + 363.54;
         			break;
-        	  case 3:
+        	    case 3:
         			return -55.89*log(analogRead(left2)) + 363.54;
         			break;
-				    case 4:
+			    case 4:
         			return -279.2*log(analogRead(long_front)) + 1836.7;
         			break;	
         		default:
