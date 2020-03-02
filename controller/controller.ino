@@ -5,9 +5,10 @@
 MPU9250 IMU(Wire, 0x68);
 int status;
 
+float pi = 3.141592654;
 long previousMillis = 0; // will store last time LED was updated
-float delta_max = pi/2; % max steering angle
-float traj_angle = 0 // TODO: set trajectory angle. It's depedent on direction of IMU. basically the direction of what's forward for our robot
+float delta_max = pi/2; // max steering angle
+float traj_angle = 0; // TODO: set trajectory angle. It's depedent on direction of IMU. basically the direction of what's forward for our robot
 
 movingAvg avgAccelX(5);
 movingAvg avgAccelY(5);
@@ -19,7 +20,7 @@ long prevVelY = 0;
 
 long interval = 19; // interval at which to blink (milliseconds), 1 ms shorter than desired (time to finish processing)
 long dt; // change in time actual (milliseconds)
-int k = 5 // gain for controller
+int k = 5; // gain for controller
 const float minGyroValue = 0.25; // min +/-Gyro value, (converted to rad/s)
 
 // TODO: Adjust these values
@@ -42,19 +43,20 @@ float checkDeadbandValue (float val, float minVal)
 float distanceToLineSegment(float len1, float len2){
   // returns the distance robot is from the wall
   // TODO: maybe do a running average?
-  return (len1+len2)/2
+  return (len1+len2)/2;
 }
 
 float integrate(float intVal, float dt, float prevSpeed){
   // integrate based off of running average
-  dt = dt/1000
+  dt = dt/1000;
   return (intVal * dt) + prevSpeed;
 }
 
 float angleWrap(float angle) {
   // A function that receives an angle and binds it between [-pi, pi].
-  float pi = 3.141592654
-  return mod(angle + pi)%(2*pi) - pi;
+  // TODO: proper angle wrap function
+  //return (angle + pi)%(2*pi) - pi;
+  return angle;
 }
 
 
@@ -121,6 +123,13 @@ void loop() {
   IR_Sensor ir_sensor;
   float left_sensor1;
   float left_sensor2;
+  float speedX;
+  float speedY;
+  float velocity;
+  float currHeading;
+  float line_follow;
+  float steer_ratio;
+  
   unsigned long currentMillis = millis();
 
   // TODO: convert m/s to cm/s or vice versa
@@ -134,33 +143,33 @@ void loop() {
     IMU.readSensor();
     accelX = avgAccelX.reading(IMU.getAccelX_mss());
     accelY = avgAccelY.reading(IMU.getAccelY_mss());
-    left_sensor1 = ir_sensor.read(2)
-    left_sensor2 = ir_sensor.read(3)
+    left_sensor1 = ir_sensor.read(2);
+    left_sensor2 = ir_sensor.read(3);
     // angular_vel = avgGyroZ.reading(checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue));
 
-    line_follow = (left_sensor1+left_sensor2)/2 + dist_from_wall // line to follow from wall
+    line_follow = (left_sensor1+left_sensor2)/2 + dist_from_wall; // line to follow from wall
 
     // integrates here
     speedX = integrate(accelX, dt, prevVelX);
     speedY = integrate(accelY, dt, prevVelY);
-    speed = sqrt(pow(speedX,2), pow(speedY,2))
+    velocity = sqrt(pow(speedX,2) + pow(speedY,2));
 
-    currHeading = atan2((left_sensor1-left_sensor2)/dist_bt_IR_sens)
+    currHeading = atan2((left_sensor1-left_sensor2),dist_bt_IR_sens);
 
     // Figure out steering angle
-    delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, speed))
+    delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, velocity)));
     // Convert steering angle to angular velocity
-    new_angular_vel =  speed*tan(delta/robot_length);
+    new_angular_vel =  velocity*tan(delta/robot_length);
 
     // Control the left and right motors
     if(new_angular_vel < 0){
-      steer_ratio = max(0.5,  1 + (new_angular_vel*dist_bt_IR_sens/velocity))
-      move_left_forwards(230);
-      move_right_forwards(int(230*steer_ratio));
+      steer_ratio = max(0.5,  1 + (new_angular_vel*dist_bt_IR_sens/velocity));
+      motors.move_left_forwards(230);
+      motors.move_right_forwards(int(230*steer_ratio));
     } else {
       steer_ratio = max(0.5, 1 - (new_angular_vel*dist_bt_IR_sens/velocity));
-      move_left_forwards(int(230*steer_ratio));
-      move_right_forwards(230);
+      motors.move_left_forwards(int(230*steer_ratio));
+      motors.move_right_forwards(230);
     }
 
     // Printing data here
