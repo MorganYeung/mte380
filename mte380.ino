@@ -24,17 +24,21 @@ void loop() {
 
   //get average of ToF reading
   float average = 0;
-  for(int x=0; x < 10; x++) {
+  for(int x=0; x < 20; x++) {
     average += front.read(1);
   }
-  average /= 10;
+  average /= 20;
+
+  Serial.print(average);
+  Serial.print("\n");
 
 //  Serial.print(average);
 //  Serial.print("\n");
 //  delay(1000);
 
-  //if too close, do a 3-point turn
+//  if too close, do a 3-point turn
   if(average <= 20) {
+      Serial.print("3 POINT\n");
       motors.move_backwards(200);
       delay(700);
       motors.turn_right();
@@ -43,12 +47,14 @@ void loop() {
 
   //turn normally
   else if(average <= 40) {
+    Serial.print("TURN RIGHT\n");
     motors.turn_right();
     delay(700);
   }
 
   //otherwise just go
   else {
+    Serial.print("GO FORWARD\n");
     motors.move_forwards(230);
   }
 
