@@ -153,7 +153,7 @@ void loop() {
     front_sensor = ir_sensor.read(1);
     curr_angular_vel = checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue);
 
-    line_follow = (left_sensor1+left_sensor2)/2 + dist_from_wall; // line to follow from wall
+    line_follow = -(left_sensor1+left_sensor2)/2 + dist_from_wall; // line to follow from wall
     
     // integrates here
     speedX = integrate(accelX, dt, prevVelX);
