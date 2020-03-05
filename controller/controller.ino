@@ -13,10 +13,11 @@ float traj_angle = 0; // TODO: set trajectory angle. It's depedent on direction 
 movingAvg avgAccelX(5);
 movingAvg avgAccelY(5);
 movingAvg avgGyroZ(5);
-movingAvg avgIR1(5);
-movingAvg avgIR2(5);
-long prevVelX = 0;
-long prevVelY = 0;
+movingAvg avgIR1(20);
+movingAvg avgIR2(20);
+float prevVelX = 0;
+float prevVelY = 0;
+float prevHeading = 0;
 
 long interval = 19; // interval at which to blink (milliseconds), 1 ms shorter than desired (time to finish processing)
 long dt; // change in time actual (milliseconds)
@@ -26,7 +27,7 @@ const float minGyroValue = 0.25; // min +/-Gyro value, (converted to rad/s)
 // TODO: Adjust these values
 float dist_bt_IR_sens = 1;
 float robot_length = 1;
-float dist_from_wall = 5;
+float dist_from_wall = 20;
 
 
 float checkDeadbandValue (float val, float minVal)
@@ -48,7 +49,7 @@ float distanceToLineSegment(float len1, float len2){
 
 float integrate(float intVal, float dt, float prevSpeed){
   // integrate based off of running average
-  dt = dt/1000;
+  dt = dt/1000; 
   return (intVal * dt) + prevSpeed;
 }
 
@@ -92,9 +93,11 @@ void setup() {
     while (1) {}
   }
   /* Advanced Items:*/
-  // IMU.set___(bias, scale)
-  //IMU.setAccelCalX( 0.410690795, 1.000380467); // sets the accelerometer bias (m/s/s) and scale factor in the X direction
-  //IMU.setAccelCalY( 5.14925E-05, 1.002806316); // sets the accelerometer bias (m/s/s) and scale factor in the Y direction
+  //IMU.set___(bias, scale)
+  //IMU.calibrateAccel();
+  IMU.setAccelCalX( 0.83, 1.000380467); // sets the accelerometer bias (m/s/s) and scale factor in the X direction
+  IMU.setAccelCalY( 0.66, 1.002806316); // sets the accelerometer bias (m/s/s) and scale factor in the Y direction
+  //  Left is positive y, Forward is positive x
   //IMU.setAccelCalZ(-0.178361616, 1.009922876); // sets the accelerometer bias (m/s/s) and scale factor in the Z direction
 
   //IMU.setAccelRange(MPU9250::ACCEL_RANGE_8G); // setting the accelerometer full scale range to +/-8G
@@ -121,14 +124,16 @@ void loop() {
   float delta;
   Motor motors;
   IR_Sensor ir_sensor;
-  float left_sensor1;
-  float left_sensor2;
+  float left_sensor1; //front dist sensor
+  float left_sensor2; //back dist sensor
+  float front_sensor;
   float speedX;
   float speedY;
   float velocity;
   float currHeading;
   float line_follow;
   float steer_ratio;
+  float curr_angular_vel;
   
   unsigned long currentMillis = millis();
 
@@ -137,24 +142,30 @@ void loop() {
     dt = currentMillis - previousMillis;
     previousMillis = currentMillis; // save the last time you blinked the LED
 
-    Serial.print(dt);
+    
 
-    // read sensor values here
+    // read sensor values here and convert to cm/s
     IMU.readSensor();
-    accelX = avgAccelX.reading(IMU.getAccelX_mss());
-    accelY = avgAccelY.reading(IMU.getAccelY_mss());
+    accelX = IMU.getAccelX_mss();
+    accelY = IMU.getAccelY_mss();
     left_sensor1 = ir_sensor.read(2);
     left_sensor2 = ir_sensor.read(3);
-    // angular_vel = avgGyroZ.reading(checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue));
+    front_sensor = ir_sensor.read(1);
+    curr_angular_vel = checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue);
 
     line_follow = (left_sensor1+left_sensor2)/2 + dist_from_wall; // line to follow from wall
-
+    
     // integrates here
     speedX = integrate(accelX, dt, prevVelX);
+    prevVelX = speedX;
     speedY = integrate(accelY, dt, prevVelY);
-    velocity = sqrt(pow(speedX,2) + pow(speedY,2));
+    prevVelY = speedY;
+    //velocity = sqrt(pow(speedX,2) + pow(speedY,2));
+    velocity = 1;
 
-    currHeading = atan2((left_sensor1-left_sensor2),dist_bt_IR_sens);
+    // currHeading = atan2((left_sensor1-left_sensor2),dist_bt_IR_sens);
+    currHeading = integrate(curr_angular_vel, dt, prevHeading);
+    prevHeading = currHeading;
 
     // Figure out steering angle
     delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, velocity)));
@@ -162,32 +173,59 @@ void loop() {
     new_angular_vel =  velocity*tan(delta/robot_length);
 
     // Control the left and right motors
+    //motors.move_forwards(255);
     if(new_angular_vel < 0){
       steer_ratio = max(0.5,  1 + (new_angular_vel*dist_bt_IR_sens/velocity));
-      motors.move_left_forwards(230);
-      motors.move_right_forwards(int(230*steer_ratio));
+      motors.move_left_forwards(255);
+      motors.move_right_forwards(int(255*steer_ratio));
+      Serial.print("left_steer_ratio: 1");
+      Serial.print("\t");
+      Serial.print("right_steer_ratio: ");
+      Serial.print(steer_ratio);
+      Serial.print("\t");
+      Serial.print(left_sensor1, 6);
+      Serial.print("\t");
+      Serial.print(left_sensor2, 6);
     } else {
       steer_ratio = max(0.5, 1 - (new_angular_vel*dist_bt_IR_sens/velocity));
-      motors.move_left_forwards(int(230*steer_ratio));
-      motors.move_right_forwards(230);
+      motors.move_left_forwards(int(255*steer_ratio));
+      motors.move_right_forwards(255);
+      Serial.print("left_steer_ratio: ");
+      Serial.print(steer_ratio);
+      Serial.print("\t");
+      Serial.print("right_steer_ratio: 1");
+      Serial.print("\t");
+      Serial.print(left_sensor1, 6);
+      Serial.print("\t");
+      Serial.print(left_sensor2, 6);
     }
-
+    Serial.print("\t");
+    Serial.print(currHeading);
+    Serial.print("\t");
+    Serial.print(velocity);
+    Serial.println();
     // Printing data here
+    /*
+    Serial.print(dt);
     Serial.print("\t");
     Serial.print(IMU.getAccelX_mss(), 6);
     Serial.print("\t");
     Serial.print(IMU.getAccelY_mss(), 6);
     Serial.print("\t");
-    Serial.print(IMU.getAccelZ_mss(), 6);
+    Serial.print(speedX, 6);
     Serial.print("\t");
     //Serial.print(IMU.getGyroX_rads(), 6);
-    Serial.print(checkDeadbandValue(IMU.getGyroX_rads(), minGyroValue), 6);
+    Serial.print(speedY, 6);
     Serial.print("\t");
     //Serial.print(IMU.getGyroY_rads(), 6);
-    Serial.print(checkDeadbandValue(IMU.getGyroY_rads(), minGyroValue), 6);
+    Serial.print(left_sensor1, 6);
     Serial.print("\t");
     //Serial.print(IMU.getGyroZ_rads(), 6);
-    Serial.print(checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue), 6);
+    Serial.print(left_sensor2, 6);
+    Serial.print("\t");
+    Serial.print(front_sensor, 6);
     Serial.println();
+    */
+    
   }
 }
