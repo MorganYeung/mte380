@@ -1,7 +1,9 @@
+#include <Kalman.h>
 #include "motor.cpp"
 #include "ir_sensor.cpp"
 #include "MPU9250.h"
 #include "movingAvg.h"
+
 MPU9250 IMU(Wire, 0x68);
 int status;
 
@@ -15,19 +17,21 @@ movingAvg avgAccelY(5);
 movingAvg avgGyroZ(5);
 movingAvg avgIR1(20);
 movingAvg avgIR2(20);
-float prevVelX = 0;
-float prevVelY = 0;
-float prevHeading = 0;
+float prevPosX = 0;
+float prevPosY = 0;
 
 long interval = 19; // interval at which to blink (milliseconds), 1 ms shorter than desired (time to finish processing)
 long dt; // change in time actual (milliseconds)
 int k = 5; // gain for controller
-const float minGyroValue = 0.25; // min +/-Gyro value, (converted to rad/s)
+const float minGyroValue = 0.075; // min +/-Gyro value, (converted to rad/s)
 
 // TODO: Adjust these values
-float dist_bt_IR_sens = 1;
+float dist_bt_IR_sens = 11;
 float robot_length = 1;
 float dist_from_wall = 20;
+
+// Kalman var
+Kalman kalRotation;
 
 
 float checkDeadbandValue (float val, float minVal)
@@ -47,12 +51,6 @@ float distanceToLineSegment(float len1, float len2){
   return (len1+len2)/2;
 }
 
-float integrate(float intVal, float dt, float prevSpeed){
-  // integrate based off of running average
-  dt = dt/1000; 
-  return (intVal * dt) + prevSpeed;
-}
-
 float angleWrap(float angle) {
   // A function that receives an angle and binds it between [-pi, pi].
   // TODO: proper angle wrap function
@@ -70,6 +68,7 @@ void setup() {
   const int pwmB = 11;
   const int brakeA = 9;
   const int brakeB = 8;
+  IR_Sensor ir_sensor;
   pinMode(directionA, OUTPUT);
   pinMode(directionB, OUTPUT); 
   pinMode(pwmA, OUTPUT); 
@@ -77,12 +76,13 @@ void setup() {
   pinMode(brakeA, OUTPUT); 
   pinMode(brakeB, OUTPUT);
 
-  // start moving average
-  avgAccelX.begin();
-  avgAccelY.begin();
-  avgGyroZ.begin();
-  avgIR1.begin();
-  avgIR2.begin();
+  // TODO: maybe do a moving average on the velocity or something
+  // initialize position here.
+  prevPosX = ir_sensor.read(1);
+  prevPosY = (ir_sensor.read(2) + ir_sensor.read(3)) / 2 ;
+
+  // start Kalman filter
+  kalRotation.setQbias(0.1); // Set how much you trust the gyroscope to higher
   
   status = IMU.begin();
   if (status < 0) {
@@ -127,6 +127,7 @@ void loop() {
   float left_sensor1; //front dist sensor
   float left_sensor2; //back dist sensor
   float front_sensor;
+  float ir_heading;
   float speedX;
   float speedY;
   float velocity;
@@ -134,10 +135,10 @@ void loop() {
   float line_follow;
   float steer_ratio;
   float curr_angular_vel;
+  float pos_from_wall;
   
   unsigned long currentMillis = millis();
 
-  // TODO: convert m/s to cm/s or vice versa
   if (currentMillis - previousMillis > interval) {
     dt = currentMillis - previousMillis;
     previousMillis = currentMillis; // save the last time you blinked the LED
@@ -149,23 +150,23 @@ void loop() {
     accelX = IMU.getAccelX_mss();
     accelY = IMU.getAccelY_mss();
     left_sensor1 = ir_sensor.read(2);
+    left_sensor1 += 2.3; // TODO: fix bias, but done here in a simple manner
     left_sensor2 = ir_sensor.read(3);
     front_sensor = ir_sensor.read(1);
+    ir_heading = atan2((left_sensor1-left_sensor2),dist_bt_IR_sens);
     curr_angular_vel = checkDeadbandValue(IMU.getGyroZ_rads(), minGyroValue);
 
     line_follow = -(left_sensor1+left_sensor2)/2 + dist_from_wall; // line to follow from wall
     
-    // integrates here
-    speedX = integrate(accelX, dt, prevVelX);
-    prevVelX = speedX;
-    speedY = integrate(accelY, dt, prevVelY);
-    prevVelY = speedY;
-    //velocity = sqrt(pow(speedX,2) + pow(speedY,2));
-    velocity = 1;
-
-    // currHeading = atan2((left_sensor1-left_sensor2),dist_bt_IR_sens);
-    currHeading = integrate(curr_angular_vel, dt, prevHeading);
-    prevHeading = currHeading;
+    currHeading = kalRotation.getAngle(ir_heading*RAD_TO_DEG, curr_angular_vel*RAD_TO_DEG, dt/1000) * DEG_TO_RAD;
+    
+    // derives here car travels along the X axis always and Y axis is away from the wall always.
+    speedX = (prevPosX-front_sensor) * dt;
+    prevPosX = front_sensor;
+    pos_from_wall = (left_sensor1 + left_sensor2)/2*cos(currHeading);
+    speedY = (prevPosY-pos_from_wall) * dt;
+    prevPosY = speedY;
+    velocity = sqrt(pow(speedX,2) + pow(speedY,2));
 
     // Figure out steering angle
     delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, velocity)));
@@ -173,59 +174,29 @@ void loop() {
     new_angular_vel =  velocity*tan(delta/robot_length);
 
     // Control the left and right motors
-    //motors.move_forwards(255);
     if(new_angular_vel < 0){
-      steer_ratio = max(0.5,  1 + (new_angular_vel*dist_bt_IR_sens/velocity));
+      steer_ratio = max(0.75,  1 + (new_angular_vel*dist_bt_IR_sens/velocity));
       motors.move_left_forwards(255);
       motors.move_right_forwards(int(255*steer_ratio));
-      Serial.print("left_steer_ratio: 1");
-      Serial.print("\t");
-      Serial.print("right_steer_ratio: ");
-      Serial.print(steer_ratio);
-      Serial.print("\t");
-      Serial.print(left_sensor1, 6);
-      Serial.print("\t");
-      Serial.print(left_sensor2, 6);
     } else {
-      steer_ratio = max(0.5, 1 - (new_angular_vel*dist_bt_IR_sens/velocity));
+      steer_ratio = max(0.75, 1 - (new_angular_vel*dist_bt_IR_sens/velocity));
       motors.move_left_forwards(int(255*steer_ratio));
       motors.move_right_forwards(255);
-      Serial.print("left_steer_ratio: ");
-      Serial.print(steer_ratio);
-      Serial.print("\t");
-      Serial.print("right_steer_ratio: 1");
-      Serial.print("\t");
-      Serial.print(left_sensor1, 6);
-      Serial.print("\t");
-      Serial.print(left_sensor2, 6);
     }
-    Serial.print("\t");
-    Serial.print(currHeading);
-    Serial.print("\t");
-    Serial.print(velocity);
-    Serial.println();
+    
     // Printing data here
-    /*
-    Serial.print(dt);
     Serial.print("\t");
-    Serial.print(IMU.getAccelX_mss(), 6);
-    Serial.print("\t");
-    Serial.print(IMU.getAccelY_mss(), 6);
-    Serial.print("\t");
-    Serial.print(speedX, 6);
-    Serial.print("\t");
-    //Serial.print(IMU.getGyroX_rads(), 6);
-    Serial.print(speedY, 6);
-    Serial.print("\t");
-    //Serial.print(IMU.getGyroY_rads(), 6);
     Serial.print(left_sensor1, 6);
     Serial.print("\t");
-    //Serial.print(IMU.getGyroZ_rads(), 6);
     Serial.print(left_sensor2, 6);
     Serial.print("\t");
-    Serial.print(front_sensor, 6);
+    Serial.print(left_sensor1-left_sensor2, 6);
+    Serial.print("\t");
+    Serial.print(currHeading*RAD_TO_DEG, 6);
+    Serial.print("\t");
+    Serial.print(ir_heading*RAD_TO_DEG, 6);
+    Serial.print("\t");
+    Serial.print(curr_angular_vel*RAD_TO_DEG, 6);
     Serial.println();
-    */
-    
   }
 }
