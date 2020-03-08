@@ -11,12 +11,6 @@ float pi = 3.141592654;
 long previousMillis = 0; // will store last time LED was updated
 float delta_max = pi/2; // max steering angle
 float traj_angle = 0; // TODO: set trajectory angle. It's depedent on direction of IMU. basically the direction of what's forward for our robot
-
-movingAvg avgAccelX(5);
-movingAvg avgAccelY(5);
-movingAvg avgGyroZ(5);
-movingAvg avgIR1(20);
-movingAvg avgIR2(20);
 float prevPosX = 0;
 float prevPosY = 0;
 
@@ -32,6 +26,8 @@ float dist_from_wall = 20;
 
 // Kalman var
 Kalman kalRotation;
+Kalman kalVelX;
+Kalman kalVelY;
 
 
 float checkDeadbandValue (float val, float minVal)
@@ -83,6 +79,13 @@ void setup() {
 
   // start Kalman filter
   kalRotation.setQbias(0.1); // Set how much you trust the gyroscope to higher
+  // TODO: Add kalman filter for the velocity
+  //kalVelX.setQbias();
+  //kalVelX.setQangle();
+  //kalVelX.setRmeasure();
+  //kalVelY.setQbias();
+  //kalVelY.setQangle();
+  //kalVelY.setRmeasure();
   
   status = IMU.begin();
   if (status < 0) {
@@ -128,9 +131,9 @@ void loop() {
   float left_sensor2; //back dist sensor
   float front_sensor;
   float ir_heading;
-  float speedX;
-  float speedY;
-  float velocity;
+  float meas_speedX;
+  float meas_speedY;
+  float currSpeed;
   float currHeading;
   float line_follow;
   float steer_ratio;
@@ -161,25 +164,29 @@ void loop() {
     currHeading = kalRotation.getAngle(ir_heading*RAD_TO_DEG, curr_angular_vel*RAD_TO_DEG, dt/1000) * DEG_TO_RAD;
     
     // derives here car travels along the X axis always and Y axis is away from the wall always.
-    speedX = (prevPosX-front_sensor) * dt;
+    meas_speedX = (prevPosX-front_sensor) * dt; // maybe add "*cos(currHeading)" the current heading to adjust the measurement distance from wall
     prevPosX = front_sensor;
-    pos_from_wall = (left_sensor1 + left_sensor2)/2*cos(currHeading);
-    speedY = (prevPosY-pos_from_wall) * dt;
+    pos_from_wall = (left_sensor1 + left_sensor2)/2; // maybe add "*cos(currHeading)" the current heading to adjust the measurement distance from wall
+    meas_speedY = (prevPosY-pos_from_wall) * dt;
     prevPosY = speedY;
-    velocity = sqrt(pow(speedX,2) + pow(speedY,2));
+
+    //currSpeedX = kalVelX.getAngle( speedX , accelX, dt);
+    //currSpeedY = kalVelX.getAngle( speedY , accelY, dt);
+
+    currSpeed = sqrt(meas_speedX*meas_speedX+meas_speedY*meas_speedY);
 
     // Figure out steering angle
-    delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, velocity)));
+    delta = max(-delta_max, min(delta_max, angleWrap(traj_angle - currHeading) + atan2(-k*line_follow, currSpeed)));
     // Convert steering angle to angular velocity
-    new_angular_vel =  velocity*tan(delta/robot_length);
+    new_angular_vel =  currSpeed*tan(delta/robot_length);
 
     // Control the left and right motors
     if(new_angular_vel < 0){
-      steer_ratio = max(0.75,  1 + (new_angular_vel*dist_bt_IR_sens/velocity));
+      steer_ratio = max(0.75,  1 + (new_angular_vel*dist_bt_IR_sens/currSpeed));
       motors.move_left_forwards(255);
       motors.move_right_forwards(int(255*steer_ratio));
     } else {
-      steer_ratio = max(0.75, 1 - (new_angular_vel*dist_bt_IR_sens/velocity));
+      steer_ratio = max(0.75, 1 - (new_angular_vel*dist_bt_IR_sens/currSpeed));
       motors.move_left_forwards(int(255*steer_ratio));
       motors.move_right_forwards(255);
     }
